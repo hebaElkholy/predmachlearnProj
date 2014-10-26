@@ -1,0 +1,106 @@
+---
+title: "Prediction Machine Learning Assig."
+author: "Heba Elkholy"
+date: "10/26/2014"
+output: 
+  html_document:
+    keep_md: true
+---
+
+This report depends on the data 
+
+
+## Reading the testing and training data
+
+Taking a quick look on the raw data, it was noticed that NA strings were either "NA", empty values or "#DIV/0!" so that was fed to the `read.csv` function
+```{r}
+dir = "/home/heba/Documents/gitRepos/predmachlearnProj";
+setwd(dir);
+train.file = "Data/pml-training.csv"
+test.file = "Data/pml-testing.csv"
+if (!file.exists(train.file)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = train.file, method="curl")
+}
+if (!file.exists(test.file)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = test.file, method="curl")
+}
+training <- read.csv(train.file, na.strings=c("NA","#DIV/0!"), stringsAsFactors = F)
+testing <- read.csv(test.file, na.strings=c("NA","#DIV/0!"), stringsAsFactors = F)
+training$classe <- factor(training$classe)
+```
+
+By inspecting the data, the first 7 columns were user specific, like the user name and the time and date of the reading, this was removed from the dataset that will be used for training. Also, the columns having complete measurements (non NA enteries) are the ones which will give the most accurate prediction results, so those are the ones that will be used.
+
+```{r}
+training.cleaned <- training[ ,8:ncol(training)]
+testing.cleaned <- testing[, 8:ncol(testing)]
+IDX <- NULL
+for (i in seq(ncol(training.cleaned))){
+  if (sum(is.na(training.cleaned[,i]))==0){
+    IDX <- c(IDX, i)
+  }
+}
+training.complete <- training.cleaned[, IDX]
+testing.complete <- testing.cleaned[ ,IDX]
+## Predicting
+```{r}
+
+```
+
+The data will be divided into training and validation using a 70, 30 ratio as shown
+```{r}
+library(caret)
+inTrain <- createDataPartition(y = training.complete$classe, p = 0.7, list = FALSE)
+training.complete.70 <- training.complete[inTrain, ]
+training.complete.30 <- training.complete[-inTrain, ]
+```
+
+The prediction model will be training using random forests, due to the big size of the data and the number of features, parallelization is done as shown:
+```{r}
+library(foreach)
+library(doParallel)
+library(randomForest)
+set.seed(123)
+registerDoParallel()
+model <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+        randomForest(x=training.complete.70[,1:ncol(training.complete.70)-1], y=training.complete.70$classe, ntree=ntree)
+}
+```
+
+## Model Validation
+
+In sample validation:
+
+```{r}
+confusionMatrix(predict(model, newdata=training.complete.70),training.complete.70$classe)
+```
+
+As you see the model was 100% accurate to predict all the data it was trained on. 
+
+out of sample validation:
+
+```{r}
+confusionMatrix(predict(model, newdata=training.complete.30),training.complete.30$classe)
+```
+
+The model had accuracy of 99.5% which is pretty good for a prediction model and that is the range of the expected accuracy in the test data. i.e. out of sample error of about 1%.
+
+## Test set results
+
+```{r}
+(res <- predict(model, newdata=testing.complete))
+```
+
+### Producing the output files
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+dir = "/home/heba/Documents/gitRepos/predmachlearnProj/results";
+setwd(dir);
+pml_write_files(res)
+```
